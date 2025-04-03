@@ -97,6 +97,8 @@ private:
 
 class command {
 public:
+	explicit command(std::string_view name) : name_{name} {}
+
 	auto usage(std::string_view usage) -> command& {
 		usage_ = usage;
 		return *this;
@@ -121,16 +123,23 @@ public:
 	auto print_help() const -> void {
 		if (!description_.empty()) std::print("{}\n\n", description_);
 
-		std::print("Usage:\n  {}\n\n", usage_);
+		auto parents = std::string{};
+		auto parent = parent_;
+		while (parent) {
+			parents.insert(0, parent->get().name_ + " ");
+			parent = parent->get().parent_;
+		};
+
+		std::print("Usage:\n  {} {}\n\n", parents, usage_);
 
 		const auto commands_padding = std::ranges::max(children_ //
 		                                               | std::views::transform([](auto&& child) {
-																											 return child.usage_.size();
+																											 return child.name_.size();
 																										 }));
 
-		std::print("Commands:\n", usage_);
+		std::print("Commands:\n");
 		for (const auto& child : children_) {
-			std::println("  {:{}}  {}", child.usage_, commands_padding, child.description_);
+			std::println("  {:{}}  {}", child.name_, commands_padding, child.description_);
 		}
 		std::println("");
 
@@ -147,6 +156,7 @@ public:
 	}
 
 private:
+	std::string name_;
 	std::string usage_;
 	std::string description_;
 	std::vector<std::pair<std::string, class flag>> flags_;
