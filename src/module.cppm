@@ -5,31 +5,12 @@ import std;
 export namespace cli {
 
 template<typename T>
-class value {
-public:
-	auto name(std::string_view name) -> value& {
-		name_ = name;
-		return *this;
-	}
+struct value {
+	value() = default;
 
-	auto default_value(T&& value) -> class value& {
-		default_value_ = std::move(value);
-		return *this;
-	}
+	explicit value(T&& data) : data{std::move(data)} {}
 
-	[[nodiscard]]
-	auto name() const -> std::string_view {
-		return name_;
-	}
-
-	[[nodiscard]]
-	auto default_value() const -> const std::optional<T>& {
-		return default_value_;
-	}
-
-private:
-	std::string name_;
-	std::optional<T> default_value_;
+	std::optional<T> data;
 };
 
 using value_type = std::variant<value<bool>, value<std::int64_t>, value<double>, value<std::string>>;
