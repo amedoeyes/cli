@@ -1,7 +1,6 @@
-export module cli:flag;
+export module cli;
 
 import :value;
-import :error;
 import std;
 
 export namespace cli {
@@ -62,10 +61,10 @@ public:
 
 	template<ValueType T>
 	[[nodiscard]]
-	auto value() const -> std::expected<T, error> {
-		if (!value_) return std::unexpected{error::no_value};
+	auto value() const -> std::expected<T, std::string> {
+		if (!value_) return std::unexpected{"flag does not have a value"};
 		const auto* value = std::get_if<cli::value<T>>(&*value_);
-		if (!value) return std::unexpected{error::type_mismatch};
+		if (!value) return std::unexpected{"type mismatch"};
 		return *value->data;
 	}
 
