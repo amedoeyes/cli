@@ -137,7 +137,9 @@ public:
 	}
 
 	auto print_help() const -> void {
-		if (!description_.empty()) std::print("{}\n\n", description_);
+		auto help = std::string{};
+
+		if (!description_.empty()) help += std::format("{}\n\n", description_);
 
 		auto parents = std::string{};
 		auto parent = parent_;
@@ -146,18 +148,18 @@ public:
 			parent = parent->get().parent_;
 		};
 
-		std::print("Usage:\n  {} {}\n\n", parents, usage_);
+		help += std::format("Usage:\n  {} {}\n\n", parents, usage_);
 
 		const auto commands_padding = std::ranges::max(children_ //
 		                                               | std::views::transform([](auto&& child) {
 																											 return child.name_.size();
 																										 }));
 
-		std::print("Commands:\n");
+		help += std::format("Commands:\n");
 		for (const auto& child : children_) {
-			std::println("  {:{}}  {}", child.name_, commands_padding, child.description_);
+			help += std::format("  {:{}}  {}\n", child.name_, commands_padding, child.description_);
 		}
-		std::println("");
+		help += "\n";
 
 		const auto flags_padding = std::ranges::max(flags_ //
 		                                            | std::views::values //
@@ -165,10 +167,12 @@ public:
 																										return flag.usage().size();
 																									}));
 
-		std::print("Flags:\n", usage_);
+		help += std::format("Flags:\n", usage_);
 		for (const auto& flag : std::views::values(flags_)) {
-			std::println("  {:{}}  {}", flag.usage(), flags_padding, flag.description());
+			help += std::format("  {:{}}  {}\n", flag.usage(), flags_padding, flag.description());
 		}
+
+		std::print("{}", help);
 	}
 
 private:
