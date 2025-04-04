@@ -4,16 +4,41 @@ import std;
 
 export namespace cli {
 
+enum class error : std::uint8_t {
+	no_value,
+	type_mismatch,
+};
+
 template<typename T>
+concept ValueType = std::is_same_v<T, bool> //
+                 || std::is_same_v<T, std::int8_t> || std::is_same_v<T, std::uint8_t> //
+                 || std::is_same_v<T, std::int16_t> || std::is_same_v<T, std::uint16_t> //
+                 || std::is_same_v<T, std::uint32_t> || std::is_same_v<T, std::int32_t>//
+                 || std::is_same_v<T, std::int64_t> || std::is_same_v<T, std::uint64_t> //
+                 || std::is_same_v<T, float> || std::is_same_v<T, double>  //
+                 || std::is_same_v<T, std::string>;
+
+template<ValueType T>
 struct value {
 	value() = default;
 
-	explicit value(T&& data) : data{std::move(data)} {}
+	explicit value(const T& data) : data{data} {}
 
 	std::optional<T> data;
 };
 
-using value_type = std::variant<value<bool>, value<std::int64_t>, value<double>, value<std::string>>;
+using value_variant = std::variant<value<bool>,
+                                   value<std::int8_t>,
+                                   value<std::int16_t>,
+                                   value<std::int32_t>,
+                                   value<std::int64_t>,
+                                   value<std::uint8_t>,
+                                   value<std::uint16_t>,
+                                   value<std::uint32_t>,
+                                   value<std::uint64_t>,
+                                   value<float>,
+                                   value<double>,
+                                   value<std::string>>;
 
 class flag {
 public:
@@ -37,9 +62,15 @@ public:
 		return *this;
 	}
 
-	template<typename T>
-	auto value(const value<T> value) -> flag& {
-		value_ = value;
+	template<ValueType T>
+	auto value() -> flag& {
+		value_ = cli::value<T>{};
+		return *this;
+	}
+
+	template<ValueType T>
+	auto value(const T& data) -> flag& {
+		value_ = cli::value{data};
 		return *this;
 	}
 
@@ -63,9 +94,13 @@ public:
 		return short_name_;
 	}
 
+	template<ValueType T>
 	[[nodiscard]]
-	auto value() const -> const std::optional<value_type>& {
-		return value_;
+	auto value() const -> std::expected<T, error> {
+		if (!value_) return std::unexpected{error::no_value};
+		const auto* value = std::get_if<cli::value<T>>(&*value_);
+		if (!value) return std::unexpected{error::type_mismatch};
+		return *value->data;
 	}
 
 private:
@@ -73,7 +108,7 @@ private:
 	std::string description_;
 	std::string name_;
 	std::string short_name_;
-	std::optional<value_type> value_;
+	std::optional<value_variant> value_;
 };
 
 class command {
