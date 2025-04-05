@@ -9,25 +9,29 @@ class command {
 public:
 	explicit command(std::string_view name) : name_{name} {}
 
-	auto usage(std::string_view usage) -> command& {
+	auto set_usage(std::string_view usage) -> void {
 		usage_ = usage;
-		return *this;
 	}
 
-	auto description(std::string_view description) -> command& {
+	auto set_description(std::string_view description) -> void {
 		description_ = description;
-		return *this;
 	}
 
-	auto subcommand(const command& cmd) -> command& {
-		children_.emplace_back(cmd);
-		children_.back().parent_ = *this;
-		return *this;
+	auto set_action(const std::function<void(const command&)>& action) {
+		action_ = action;
 	}
 
-	auto flag(const std::string& name, const flag& flag) -> command& {
+	auto add_flag(const std::string& name, const flag& flag) -> void {
 		flags_.emplace_back(name, flag);
-		return *this;
+	}
+
+	auto add_command(const std::string_view name) -> command& {
+		children_.emplace_back(std::make_unique<command>(name));
+		auto& child = children_.back();
+		child->parent_ = *this;
+		return *child;
+	}
+
 	}
 
 	auto print_help() const -> void {
@@ -49,12 +53,12 @@ public:
 
 		if (!children_.empty()) {
 			const auto commands_padding = std::ranges::max(children_ | std::views::transform([](auto&& child) {
-																											 return child.name_.size();
+																											 return child->name_.size();
 																										 }));
 
 			help += std::format("Commands:\n");
 			for (const auto& child : children_) {
-				help += std::format("  {:{}}  {}\n", child.name_, commands_padding, child.description_);
+				help += std::format("  {:{}}  {}\n", child->name_, commands_padding, child->description_);
 			}
 			help += "\n";
 		}
@@ -86,9 +90,9 @@ private:
 	std::string name_;
 	std::string usage_;
 	std::string description_;
-	std::vector<std::pair<std::string, class flag>> flags_;
+	std::vector<std::pair<std::string, struct flag>> flags_;
 	std::optional<std::reference_wrapper<const command>> parent_;
-	std::vector<command> children_;
+	std::vector<std::unique_ptr<command>> children_;
 };
 
 }  // namespace cli
