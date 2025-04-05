@@ -42,28 +42,41 @@ public:
 			parent = parent->get().parent_;
 		};
 
-		help += std::format("Usage:\n  {} {}\n\n", parents, usage_);
+		help += std::format("Usage:\n  {}", parents);
+		if (!usage_.empty()) help += usage_;
+		else help += name_;
+		help += "\n\n";
 
-		const auto commands_padding = std::ranges::max(children_ //
-		                                               | std::views::transform([](auto&& child) {
+		if (!children_.empty()) {
+			const auto commands_padding = std::ranges::max(children_ | std::views::transform([](auto&& child) {
 																											 return child.name_.size();
 																										 }));
 
-		help += std::format("Commands:\n");
-		for (const auto& child : children_) {
-			help += std::format("  {:{}}  {}\n", child.name_, commands_padding, child.description_);
+			help += std::format("Commands:\n");
+			for (const auto& child : children_) {
+				help += std::format("  {:{}}  {}\n", child.name_, commands_padding, child.description_);
+			}
+			help += "\n";
 		}
-		help += "\n";
 
-		const auto flags_padding = std::ranges::max(flags_ //
-		                                            | std::views::values //
-		                                            | std::views::transform([](auto&& flag) {
-																										return flag.usage().size();
+		if (!flags_.empty()) {
+			auto flag_usage = [](const auto& flag) -> std::string {
+				if (!flag.usage.empty()) return flag.usage;
+				const auto short_flag = (flag.short_name != '\0') ? std::format("-{}", flag.short_name) : std::string{};
+				const auto long_flag = (!flag.name.empty()) ? std::format("--{}", flag.name) : std::string{};
+				return std::format("{:>2}, {}", short_flag, long_flag);
+			};
+
+			const auto flags_padding = std::ranges::max(flags_ | std::views::values | std::views::transform([&](auto&& flag) {
+																										return flag_usage(flag).size();
 																									}));
 
-		help += std::format("Flags:\n", usage_);
-		for (const auto& flag : std::views::values(flags_)) {
-			help += std::format("  {:{}}  {}\n", flag.usage(), flags_padding, flag.description());
+			help += std::format("Flags:\n", usage_);
+			for (const auto& flag : std::views::values(flags_)) {
+				help += std::format("  {:{}}", flag_usage(flag), flags_padding);
+				if (!flag.description.empty()) help += std::format("  {}", flag.description);
+				help += '\n';
+			}
 		}
 
 		std::print("{}", help);
