@@ -219,6 +219,8 @@ public:
 		help += std::format("Usage:\n  {}", parents);
 		if (!usage_.empty()) help += usage_;
 		else help += name_;
+		if (!options_.empty()) help += " [options]";
+		if (!children_.empty()) help += " [command]";
 		help += "\n\n";
 
 		if (!children_.empty()) {
