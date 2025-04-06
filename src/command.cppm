@@ -247,9 +247,15 @@ private:
 		const auto next = [&] {
 			if (index < args.size()) ++index;
 		};
+		bool force_positional = false;
 
 		while (!at_end()) {
-			if (curr().starts_with('-')) {
+			if (!force_positional && curr() == "--") {
+				force_positional = true;
+				next();
+			}
+
+			if (!force_positional && curr().starts_with('-')) {
 				auto flag_name = std::string_view{};
 				auto flag_value = std::optional<std::string_view>{};
 				const auto flag_prefix = std::string_view{curr().starts_with("--") ? "--" : "-"};
@@ -359,19 +365,21 @@ private:
 				continue;
 			}
 
-			const auto it = std::ranges::find_if(children_, [&](auto&& c) { return c->name_ == curr(); });
-			if (it != children_.end()) {
-				next();
+			if (!force_positional) {
+				const auto it = std::ranges::find_if(children_, [&](auto&& c) { return c->name_ == curr(); });
+				if (it != children_.end()) {
+					next();
 
-				if (arguments_validator_) {
-					const auto [ok, msg] = (*arguments_validator_)(arguments_);
-					if (!ok) return std::unexpected{msg};
+					if (arguments_validator_) {
+						const auto [ok, msg] = (*arguments_validator_)(arguments_);
+						if (!ok) return std::unexpected{msg};
+					}
+
+					auto cmds = (*it)->parse(args.subspan(index));
+					if (!cmds) return std::unexpected{cmds.error()};
+					cmds->emplace_front(*this);
+					return *cmds;
 				}
-
-				auto cmds = (*it)->parse(args.subspan(index));
-				if (!cmds) return std::unexpected{cmds.error()};
-				cmds->emplace_front(*this);
-				return *cmds;
 			}
 
 			if (!at_end()) {
