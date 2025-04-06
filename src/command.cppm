@@ -95,6 +95,9 @@ public:
 	}
 
 	auto add_flag(const std::string& name, const flag& flag) -> void {
+		assert((!flag.name.empty() || flag.short_name != '\0') && "name or short_name must be set");
+		assert(flag.short_name == '\0'
+		       || std::isalnum(static_cast<unsigned char>(flag.short_name)) && "short_name must be alphanumeric");
 		flags_.emplace_back(name, flag);
 	}
 
@@ -151,9 +154,34 @@ public:
 		if (!flags_.empty()) {
 			auto flag_usage = [](const auto& flag) -> std::string {
 				if (!flag.usage.empty()) return flag.usage;
-				const auto short_flag = (flag.short_name != '\0') ? std::format("-{}", flag.short_name) : std::string{};
-				const auto long_flag = (!flag.name.empty()) ? std::format("--{}", flag.name) : std::string{};
-				return std::format("{:>2}, {}", short_flag, long_flag);
+				auto usage = std::string{};
+
+				const auto name = (!flag.name.empty()) ? std::format("--{}", flag.name) : std::string{};
+				const auto short_name = (flag.short_name != '\0') ? std::format("-{}", flag.short_name) : std::string{};
+
+				if (!name.empty() && short_name.empty()) usage += std::format("    {}", name);
+				else if (name.empty() && !short_name.empty()) usage += std::format("{}", short_name);
+				else usage += std::format("{}, {}", short_name, name);
+
+				if (flag.value) {
+					const auto type = visit(
+						*flag.value,
+						[](const value<bool>&) { return "bool"; },
+						[](const value<std::int8_t>&) { return "s8"; },
+						[](const value<std::uint8_t>&) { return "u8"; },
+						[](const value<std::int16_t>&) { return "s16"; },
+						[](const value<std::uint16_t>&) { return "u16"; },
+						[](const value<std::int32_t>&) { return "s32"; },
+						[](const value<std::uint32_t>&) { return "u32"; },
+						[](const value<std::int64_t>&) { return "s64"; },
+						[](const value<std::uint64_t>&) { return "u64"; },
+						[](const value<float>&) { return "f32"; },
+						[](const value<double>&) { return "f64"; },
+						[](const value<std::string>&) { return "str"; });
+					usage += std::format(" {}", type);
+				}
+
+				return usage;
 			};
 
 			const auto flags_padding = std::ranges::max(flags_ | std::views::values
