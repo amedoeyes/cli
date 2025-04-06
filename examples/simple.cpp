@@ -7,15 +7,10 @@ auto error(std::string_view msg) {
 
 auto main(int argc, char** argv) -> int {
 	auto cli = cli::command{"simple"};
-	cli.set_usage("simple [command] [flag]...");
+	cli.set_usage("simple [flag]...");
 	cli.set_description("Simple cli example");
-	cli.add_flag("value",
-	             {
-					 .usage = "  , --value VALUE",
-					 .description = "print value",
-					 .name = "value",
-					 .value = cli::value<std::string>{},
-				 });
+	cli.set_arguments_validator(cli::exact_args(0));
+	cli.add_flag("value", {.description = "print value", .name = "value", .value = cli::value<double>{}});
 	cli.add_flag("help", cli::flag{.description = "print help", .name = "help", .short_name = 'h'});
 	cli.add_flag("version", {.description = "print version", .name = "version", .short_name = 'v'});
 
@@ -24,16 +19,14 @@ auto main(int argc, char** argv) -> int {
 		return 1;
 	}
 
-	const auto help = cli.flag_value<bool>("help");
-	if (help) {
+	if (const auto help = cli.flag_value<bool>("help")) {
 		cli.print_help();
 		return 0;
 	}
 
-	const auto value = cli.flag_value<std::string>("value");
-	if (value) std::println("{}", *value);
-
-	std::println("{}", cli.arguments());
+	if (const auto value = cli.flag_value<double>("value")) {
+		std::println("{}", *value);
+	}
 
 	return 0;
 }
