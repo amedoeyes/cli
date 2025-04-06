@@ -1,8 +1,20 @@
+module;
+
+#include <cassert>
+
 export module cli:command;
 
 import :flag;
 import :value;
 import std;
+
+template<typename T>
+struct get_value_type;
+
+template<typename T>
+struct get_value_type<cli::value<T>> {
+	using type = T;
+};
 
 template<class... Ts>
 struct overloads : Ts... {
@@ -17,8 +29,16 @@ auto visit(Variant&& variant, Funcs&&... funcs) {
 	return std::visit(overloads{std::forward<Funcs>(funcs)...}, std::forward<Variant>(variant));
 }
 
-export namespace cli {
+template<typename T>
+auto parse_number(std::string_view str, std::int32_t base = 10) -> std::expected<T, std::errc> {
+	auto value = T{};
+	const auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value, base);
+	if (ec != std::errc{}) return std::unexpected{ec};
+	if (ptr != str.data() + str.size()) return std::unexpected{std::errc::invalid_argument};
+	return value;
+}
 
+export namespace cli {
 struct arguments_validator {
 	using validator_func = std::function<std::pair<bool, std::string>(std::span<const std::string_view>)>;
 
@@ -259,7 +279,7 @@ private:
 				auto flag_name = std::string_view{};
 				auto flag_value = std::optional<std::string_view>{};
 				const auto flag_prefix = std::string_view{curr().starts_with("--") ? "--" : "-"};
-				const auto error = [&](const std::string_view msg) {
+				const auto flag_error = [&](const std::string_view msg) {
 					return std::unexpected{std::format("'{}{}' {}", flag_prefix, flag_name, msg)};
 				};
 
@@ -283,11 +303,11 @@ private:
 				const auto it = std::ranges::find_if(flags_, [&](auto&& p) {
 					return flag_prefix == "--" ? p.second.name == flag_name : p.second.short_name == flag_name[0];
 				});
-				if (it == flags_.end()) return error("is not a valid flag");
+				if (it == flags_.end()) return flag_error("is not a valid flag");
 				const auto& [key, flag] = *it;
 
 				if (!flag.value && flag_value)
-					return error(std::format("does not expect a value but got '{}'", *flag_value));
+					return flag_error(std::format("does not expect a value but got '{}'", *flag_value));
 
 				if (flag.value) {
 					const auto default_value = visit(*flag.value,
@@ -298,62 +318,50 @@ private:
 						flag_value = curr();
 						next();
 					} else if (!default_value) {
-						return error("expects a value");
+						return flag_error("expects a value");
 					}
 
 					if (flag_value) {
 						const auto value = visit(
 							*flag.value,
 
-							[&](const std::optional<cli::value<bool>>&) -> std::expected<primitive, std::string> {
+							[&](const cli::value<bool>&) -> std::expected<primitive, std::string> {
 								if (*flag_value == "true") return true;
 								if (*flag_value == "false") return false;
-								return std::unexpected{std::format(
-									"'{}{}' expects a boolean value of either 'true' or " "'false' but got " "'{}'",
-									flag_prefix,
-									flag_name,
-									*flag_value)};
+								return flag_error(
+									std::format("expects a boolean value of either 'true' or 'false' but " "got '{}'",
+							                    *flag_value));
 							},
 
-							[&](const std::optional<cli::value<std::int64_t>>&)
-								-> std::expected<primitive, std::string> {
-								auto value = 0l;
-								auto [_, ec] = std::from_chars(flag_value->data(),
-							                                   std::next(flag_value->data(), long(flag_value->size())),
-							                                   value);
-								if (ec != std::errc{}) {
-									return std::unexpected{std::format("'{}{}' expects an integer nubmer but got '{}'",
-								                                       flag_prefix,
-								                                       flag_name,
-								                                       *flag_value)};
+							[&](const cli::value<std::string>&) -> std::expected<primitive, std::string> {
+								return std::string{*flag_value};
+							},
+
+							[&](const auto& type) -> std::expected<primitive, std::string> {
+								using T = typename get_value_type<std::decay_t<decltype(type)>>::type;
+
+								if constexpr (std::is_integral_v<T>) {
+									const auto value = parse_number<T>(*flag_value);
+									if (!value) {
+										return flag_error(std::format("expects an integer number but got '{}'",
+									                                  *flag_value));
+									}
+									return *value;
+								} else if constexpr (std::is_floating_point_v<T>) {  // TODO: replace with parse_number
+								                                                     // when std::from_chars support
+								                                                     // floats
+									try {
+										if constexpr (std::is_same_v<T, float>) {
+											return std::stof(std::string{*flag_value});
+										} else if constexpr (std::is_same_v<T, double>) {
+											return std::stod(std::string{*flag_value});
+										}
+									} catch (const std::exception&) {
+										return flag_error(std::format("expects a floating-point number but got '{}'",
+									                                  *flag_value));
+									}
 								}
-								return value;
-							},
-
-							[&](const std::optional<cli::value<double>>&) -> std::expected<primitive, std::string> {
-								auto value = 0.0;
-								try {
-									value = std::stod(std::string{*flag_value});
-								} catch (...) {
-									throw std::runtime_error{std::format("'{}{}' expects a dcimal number got but '{}'",
-								                                         flag_prefix,
-								                                         flag_name,
-								                                         *flag_value)};
-								}
-								// // not supported by libc++ yet :/
-                              // auto [_, ec] = std::from_chars(flag_value->data(),
-							    //                                 std::next(flag_value->data(),
-							    //                                 long(flag_value->size())), value);
-							    // if (ec != std::errc{}) {
-							    // 	return std::unexpected{
-							    // 		std::format("'{}{}' expects a decimal nubmer but got '{}'", flag_prefix,
-							    // flag_name, *flag_value)};
-							    // }
-								return value;
-							},
-
-							[&](const std::optional<cli::value<std::string>>&)
-								-> std::expected<primitive, std::string> { return std::string{*flag_value}; });
+							});
 
 						if (!value) return std::unexpected{value.error()};
 						flag_values_[key] = *value;
