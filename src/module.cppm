@@ -85,7 +85,7 @@ auto parse_number(std::string_view str, std::int32_t base = 10) -> std::expected
 
 export namespace cli {
 
-struct flag {
+struct option {
 	std::string usage;
 	std::string description;
 	std::string name;
@@ -176,11 +176,11 @@ public:
 		arguments_validator_ = validator;
 	}
 
-	auto add_flag(const std::string& name, const flag& flag) -> void {
-		assert((!flag.name.empty() || flag.short_name != '\0') && "name or short_name must be set");
-		assert(flag.short_name == '\0'
-		       || std::isalnum(static_cast<unsigned char>(flag.short_name)) && "short_name must be alphanumeric");
-		flags_.emplace_back(name, flag);
+	auto add_option(const std::string& name, const option& option) -> void {
+		assert((!option.name.empty() || option.short_name != '\0') && "name or short_name must be set");
+		assert(option.short_name == '\0'
+		       || std::isalnum(static_cast<unsigned char>(option.short_name)) && "short_name must be alphanumeric");
+		options_.emplace_back(name, option);
 	}
 
 	auto add_command(const std::string_view name) -> command& {
@@ -197,8 +197,8 @@ public:
 
 	template<ValueType T>
 	[[nodiscard]]
-	auto flag_value(std::string_view name) const -> std::optional<T> {
-		if (const auto it = flag_values_.find(std::string{name}); it != flag_values_.end()) {
+	auto option_value(std::string_view name) const -> std::optional<T> {
+		if (const auto it = option_values_.find(std::string{name}); it != option_values_.end()) {
 			if (const auto* value = std::get_if<T>(&it->second)) return *value;
 		}
 		return std::nullopt;
@@ -233,21 +233,22 @@ public:
 			help += "\n";
 		}
 
-		if (!flags_.empty()) {
-			auto flag_usage = [](const auto& flag) -> std::string {
-				if (!flag.usage.empty()) return flag.usage;
+		if (!options_.empty()) {
+			auto option_usage = [](const auto& option) -> std::string {
+				if (!option.usage.empty()) return option.usage;
 				auto usage = std::string{};
 
-				const auto name = (!flag.name.empty()) ? std::format("--{}", flag.name) : std::string{};
-				const auto short_name = (flag.short_name != '\0') ? std::format("-{}", flag.short_name) : std::string{};
+				const auto name = (!option.name.empty()) ? std::format("--{}", option.name) : std::string{};
+				const auto short_name = (option.short_name != '\0') ? std::format("-{}", option.short_name)
+				                                                    : std::string{};
 
 				if (!name.empty() && short_name.empty()) usage += std::format("    {}", name);
 				else if (name.empty() && !short_name.empty()) usage += std::format("{}", short_name);
 				else usage += std::format("{}, {}", short_name, name);
 
-				if (flag.value) {
+				if (option.value) {
 					const auto type = visit(
-						*flag.value,
+						*option.value,
 						[](const value<bool>&) { return "bool"; },
 						[](const value<std::int8_t>&) { return "s8"; },
 						[](const value<std::uint8_t>&) { return "u8"; },
@@ -266,15 +267,15 @@ public:
 				return usage;
 			};
 
-			const auto flags_padding = std::ranges::max(flags_ | std::views::values
-			                                            | std::views::transform([&](auto&& flag) {
-															  return flag_usage(flag).size();
-														  }));
+			const auto options_padding = std::ranges::max(options_ | std::views::values
+			                                              | std::views::transform([&](auto&& option) {
+																return option_usage(option).size();
+															}));
 
-			help += std::format("Flags:\n", usage_);
-			for (const auto& flag : std::views::values(flags_)) {
-				help += std::format("  {:{}}", flag_usage(flag), flags_padding);
-				if (!flag.description.empty()) help += std::format("  {}", flag.description);
+			help += std::format("Options:\n", usage_);
+			for (const auto& option : std::views::values(options_)) {
+				help += std::format("  {:{}}", option_usage(option), options_padding);
+				if (!option.description.empty()) help += std::format("  {}", option.description);
 				help += '\n';
 			}
 		}
@@ -307,8 +308,8 @@ private:
 	std::function<void(const command&)> action_;
 	std::vector<std::string_view> arguments_;
 	std::optional<arguments_validator> arguments_validator_;
-	std::vector<std::pair<std::string, flag>> flags_;
-	std::unordered_map<std::string, primitive> flag_values_;
+	std::vector<std::pair<std::string, option>> options_;
+	std::unordered_map<std::string, primitive> option_values_;
 	std::optional<std::reference_wrapper<const command>> parent_;
 	std::vector<std::unique_ptr<command>> children_;
 
@@ -329,75 +330,75 @@ private:
 			}
 
 			if (!force_positional && curr().starts_with('-')) {
-				auto flag_name = std::string_view{};
-				auto flag_value = std::optional<std::string_view>{};
-				const auto flag_prefix = std::string_view{curr().starts_with("--") ? "--" : "-"};
-				const auto flag_error = [&](const std::string_view msg) {
-					return std::unexpected{std::format("'{}{}' {}", flag_prefix, flag_name, msg)};
+				auto option_name = std::string_view{};
+				auto option_value = std::optional<std::string_view>{};
+				const auto option_prefix = std::string_view{curr().starts_with("--") ? "--" : "-"};
+				const auto option_error = [&](const std::string_view msg) {
+					return std::unexpected{std::format("'{}{}' {}", option_prefix, option_name, msg)};
 				};
 
-				if (flag_prefix == "--") {
+				if (option_prefix == "--") {
 					const auto eq_pos = curr().find('=');
 					if (eq_pos != std::string::npos) {
-						flag_name = curr().substr(2, eq_pos - 2);
-						flag_value = curr().substr(eq_pos + 1);
+						option_name = curr().substr(2, eq_pos - 2);
+						option_value = curr().substr(eq_pos + 1);
 					} else {
-						flag_name = curr().substr(2);
+						option_name = curr().substr(2);
 					}
 				} else {
-					flag_name = curr().substr(1, 1);
+					option_name = curr().substr(1, 1);
 					if (curr().size() > 2) {
-						if (curr()[2] == '=') flag_value = curr().substr(3);
-						else flag_value = curr().substr(2);
+						if (curr()[2] == '=') option_value = curr().substr(3);
+						else option_value = curr().substr(2);
 					}
 				}
 				next();
 
-				const auto it = std::ranges::find_if(flags_, [&](auto&& p) {
-					return flag_prefix == "--" ? p.second.name == flag_name : p.second.short_name == flag_name[0];
+				const auto it = std::ranges::find_if(options_, [&](auto&& p) {
+					return option_prefix == "--" ? p.second.name == option_name : p.second.short_name == option_name[0];
 				});
-				if (it == flags_.end()) return flag_error("is not a valid flag");
-				const auto& [key, flag] = *it;
+				if (it == options_.end()) return option_error("is not a valid option");
+				const auto& [key, option] = *it;
 
-				if (!flag.value && flag_value)
-					return flag_error(std::format("does not expect a value but got '{}'", *flag_value));
+				if (!option.value && option_value)
+					return option_error(std::format("does not expect a value but got '{}'", *option_value));
 
-				if (flag.value) {
-					const auto default_value = visit(*flag.value,
+				if (option.value) {
+					const auto default_value = visit(*option.value,
 					                                 [](auto&& v) -> std::optional<primitive> { return v.data; });
-					if (default_value) flag_values_[key] = *default_value;
+					if (default_value) option_values_[key] = *default_value;
 
-					if (!flag_value && !at_end() && !curr().starts_with("-")) {
-						flag_value = curr();
+					if (!option_value && !at_end() && !curr().starts_with("-")) {
+						option_value = curr();
 						next();
 					} else if (!default_value) {
-						return flag_error("expects a value");
+						return option_error("expects a value");
 					}
 
-					if (flag_value) {
+					if (option_value) {
 						const auto value = visit(
-							*flag.value,
+							*option.value,
 
 							[&](const cli::value<bool>&) -> std::expected<primitive, std::string> {
-								if (*flag_value == "true") return true;
-								if (*flag_value == "false") return false;
-								return flag_error(
-									std::format("expects a boolean value of either 'true' or 'false' but " "got '{}'",
-							                    *flag_value));
+								if (*option_value == "true") return true;
+								if (*option_value == "false") return false;
+								return option_error(std::format(
+									"expects a boolean value of either 'true' or 'false' " "but " "got '{}'",
+									*option_value));
 							},
 
 							[&](const cli::value<std::string>&) -> std::expected<primitive, std::string> {
-								return std::string{*flag_value};
+								return std::string{*option_value};
 							},
 
 							[&](const auto& type) -> std::expected<primitive, std::string> {
 								using T = typename get_value_type<std::decay_t<decltype(type)>>::type;
 
 								if constexpr (std::is_integral_v<T>) {
-									const auto value = parse_number<T>(*flag_value);
+									const auto value = parse_number<T>(*option_value);
 									if (!value) {
-										return flag_error(std::format("expects an integer number but got '{}'",
-									                                  *flag_value));
+										return option_error(std::format("expects an integer number but got '{}'",
+									                                    *option_value));
 									}
 									return *value;
 								} else if constexpr (std::is_floating_point_v<T>) {  // TODO: replace with parse_number
@@ -405,22 +406,22 @@ private:
 								                                                     // floats
 									try {
 										if constexpr (std::is_same_v<T, float>) {
-											return std::stof(std::string{*flag_value});
+											return std::stof(std::string{*option_value});
 										} else if constexpr (std::is_same_v<T, double>) {
-											return std::stod(std::string{*flag_value});
+											return std::stod(std::string{*option_value});
 										}
 									} catch (const std::exception&) {
-										return flag_error(std::format("expects a floating-point number but got '{}'",
-									                                  *flag_value));
+										return option_error(std::format("expects a floating-point number but got '{}'",
+									                                    *option_value));
 									}
 								}
 							});
 
 						if (!value) return std::unexpected{value.error()};
-						flag_values_[key] = *value;
+						option_values_[key] = *value;
 					}
 				} else {
-					flag_values_[key] = true;
+					option_values_[key] = true;
 				}
 
 				continue;
