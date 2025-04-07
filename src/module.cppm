@@ -210,18 +210,20 @@ public:
 
 		if (!description_.empty()) help += std::format("{}\n\n", description_);
 
-		auto parents = std::string{};
-		auto parent = parent_;
-		while (parent) {
-			parents.insert(0, parent->get().name_ + " ");
-			parent = parent->get().parent_;
-		};
-
-		help += std::format("Usage:\n  {}", parents);
-		if (!usage_.empty()) help += usage_;
-		else help += name_;
-		if (!options_.empty()) help += " [options]";
-		if (!children_.empty()) help += " [command]";
+		help += "Usage: ";
+		if (!usage_.empty()) {
+			help += usage_;
+		} else {
+			auto parents = std::string{};
+			auto parent = parent_;
+			while (parent) {
+				parents.insert(0, parent->get().name_ + " ");
+				parent = parent->get().parent_;
+			};
+			help += parents + name_;
+			if (!options_.empty()) help += " [options]";
+			if (!children_.empty()) help += " [command]";
+		}
 		help += "\n\n";
 
 		if (!children_.empty()) {
@@ -229,7 +231,7 @@ public:
 															   return child->name_.size();
 														   }));
 
-			help += std::format("Commands:\n");
+			help += "Commands:\n";
 			for (const auto& child : children_) {
 				help += std::format("  {:{}}  {}\n", child->name_, commands_padding, child->description_);
 			}
@@ -264,7 +266,16 @@ public:
 						[](const value<float>&) { return "f32"; },
 						[](const value<double>&) { return "f64"; },
 						[](const value<std::string>&) { return "str"; });
-					usage += std::format(" {}", type);
+
+					const auto default_value = visit(*option.value,
+					                                 [](auto&& v) -> std::optional<primitive> { return v.data; });
+					const auto name = visit(*option.value,
+					                        [](auto&& v) -> std::optional<std::string> { return v.name; });
+					usage += " ";
+					if (default_value) usage += "[";
+					if (name) usage += *name;
+					else usage += type;
+					if (default_value) usage += "]";
 				}
 
 				return usage;
@@ -275,7 +286,7 @@ public:
 																return option_usage(option).size();
 															}));
 
-			help += std::format("Options:\n", usage_);
+			help += "Options:\n";
 			for (const auto& option : std::views::values(options_)) {
 				help += std::format("  {:{}}", option_usage(option), options_padding);
 				if (!option.description.empty()) help += std::format("  {}", option.description);
