@@ -91,6 +91,7 @@ struct option {
 	std::string name;
 	char short_name{'\0'};
 	std::optional<value_variant> value;
+	std::optional<std::function<void()>> early_action;
 };
 
 }  // namespace cli
@@ -290,6 +291,13 @@ public:
 		                | std::views::transform([](auto&& a) { return std::string_view(a); })
 		                | std::ranges::to<std::vector>();
 		if (const auto res = parse(args); !res) return std::unexpected{res.error()};
+		for (const auto& [name, opt] : options_) {
+			if (option_values_.contains(name) && opt.early_action) (*opt.early_action)();
+		}
+		if (arguments_validator_) {
+			const auto [ok, msg] = (*arguments_validator_)(arguments_);
+			if (!ok) return std::unexpected{msg};
+		}
 		return {};
 	}
 
@@ -299,6 +307,15 @@ public:
 		                | std::ranges::to<std::vector>();
 		auto cmds = parse(args);
 		if (!cmds) return std::unexpected{cmds.error()};
+		for (const auto& cmd : *cmds) {
+			for (const auto& [name, opt] : cmd.get().options_) {
+				if (option_values_.contains(name) && opt.early_action) (*opt.early_action)();
+			}
+			if (cmd.get().arguments_validator_) {
+				const auto [ok, msg] = (*cmd.get().arguments_validator_)(arguments_);
+				if (!ok) return std::unexpected{msg};
+			}
+		}
 		for (const auto& cmd : *cmds) cmd.get().action_(cmd.get());
 		return {};
 	}
@@ -435,12 +452,6 @@ private:
 				const auto it = std::ranges::find_if(children_, [&](auto&& c) { return c->name_ == curr(); });
 				if (it != children_.end()) {
 					next();
-
-					if (arguments_validator_) {
-						const auto [ok, msg] = (*arguments_validator_)(arguments_);
-						if (!ok) return std::unexpected{msg};
-					}
-
 					auto cmds = (*it)->parse(args.subspan(index));
 					if (!cmds) return std::unexpected{cmds.error()};
 					cmds->emplace_front(*this);
@@ -452,11 +463,6 @@ private:
 				arguments_.emplace_back(curr());
 				next();
 			}
-		}
-
-		if (arguments_validator_) {
-			const auto [ok, msg] = (*arguments_validator_)(arguments_);
-			if (!ok) return std::unexpected{msg};
 		}
 
 		return std::list{std::cref(*this)};
