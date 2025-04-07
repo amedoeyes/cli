@@ -392,7 +392,7 @@ private:
 					if (!option_value && !at_end() && !curr().starts_with("-")) {
 						option_value = curr();
 						next();
-					} else if (!default_value) {
+					} else if (!default_value && !option_value) {
 						return option_error("expects a value");
 					}
 
