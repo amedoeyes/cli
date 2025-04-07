@@ -347,12 +347,14 @@ private:
 					} else {
 						option_name = curr().substr(2);
 					}
-				} else {
+				} else if (option_prefix == "-" && curr().size() == 2) {
 					option_name = curr().substr(1, 1);
 					if (curr().size() > 2) {
 						if (curr()[2] == '=') option_value = curr().substr(3);
 						else option_value = curr().substr(2);
 					}
+				} else {
+					return option_error("is not a valid option");
 				}
 				next();
 
