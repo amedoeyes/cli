@@ -74,11 +74,13 @@ auto visit(Variant&& variant, Funcs&&... funcs) {
 }
 
 template<typename T>
-auto parse_number(std::string_view str, std::int32_t base = 10) -> std::expected<T, std::errc> {
+constexpr auto parse_number(std::string_view str, std::int32_t base = 10) -> std::expected<T, std::error_code> {
 	auto value = T{};
-	const auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value, base);
-	if (ec != std::errc{}) return std::unexpected{ec};
-	if (ptr != str.data() + str.size()) return std::unexpected{std::errc::invalid_argument};
+	const auto* begin = str.data();
+	const auto* end = std::next(str.data(), static_cast<std::int64_t>(str.size()));
+	const auto [ptr, ec] = std::from_chars(begin, end, value, base);
+	if (ec != std::errc{}) return std::unexpected{std::make_error_code(ec)};
+	if (ptr != end) return std::unexpected{std::make_error_code(std::errc::invalid_argument)};
 	return value;
 }
 
@@ -87,11 +89,11 @@ auto parse_number(std::string_view str, std::int32_t base = 10) -> std::expected
 export namespace cli {
 
 struct option {
-	std::string usage;
-	std::string description;
-	std::string name;
+	std::string usage{};
+	std::string description{};
+	std::string name{};
 	char short_name{'\0'};
-	std::optional<value_variant> value;
+	std::optional<value_variant> value{std::nullopt};
 };
 
 struct group {
@@ -186,7 +188,7 @@ public:
 		while (parent) {
 			parents.insert(0, parent->get().name_ + " ");
 			parent = parent->get().parent_;
-		};
+		}
 		help += parents + name_;
 		if (!options_.empty()) help += " [options]";
 		if (!usage_.empty()) help += std::format(" {}", usage_);
@@ -238,11 +240,11 @@ public:
 
 					const auto default_value = visit(*option.value,
 					                                 [](auto&& v) -> std::optional<primitive> { return v.data; });
-					const auto name = visit(*option.value,
-					                        [](auto&& v) -> std::optional<std::string> { return v.name; });
+					const auto value_name = visit(*option.value,
+					                              [](auto&& v) -> std::optional<std::string> { return v.name; });
 					usage += " ";
 					if (default_value) usage += "[";
-					if (name) usage += *name;
+					if (value_name) usage += *value_name;
 					else usage += type;
 					if (default_value) usage += "]";
 				}
@@ -287,18 +289,24 @@ public:
 		std::print("{}", help);
 	}
 
+	[[nodiscard]]
 	auto parse(std::int32_t argc, char** argv) -> std::expected<void, std::string> {
-		const auto args = std::span(std::next(argv), argc - 1)
-		                | std::views::transform([](auto&& a) { return std::string_view(a); })
-		                | std::ranges::to<std::vector>();
+		auto args = std::vector<std::string_view>{};
+		args.reserve(static_cast<std::size_t>(argc));
+		for (const auto i : std::views::iota(0z, static_cast<std::int64_t>(argc))) {
+			args.emplace_back(*std::next(argv, i));
+		}
 		if (const auto res = parse(args); !res) return std::unexpected{res.error()};
 		return {};
 	}
 
+	[[nodiscard]]
 	auto execute(std::int32_t argc, char** argv) -> std::expected<void, std::string> {
-		const auto args = std::span(std::next(argv), argc - 1)
-		                | std::views::transform([](auto&& a) { return std::string_view(a); })
-		                | std::ranges::to<std::vector>();
+		auto args = std::vector<std::string_view>{};
+		args.reserve(static_cast<std::size_t>(argc));
+		for (const auto i : std::views::iota(0z, static_cast<std::int64_t>(argc))) {
+			args.emplace_back(*std::next(argv, i));
+		}
 		auto cmds = parse(args);
 		if (!cmds) return std::unexpected{cmds.error()};
 		for (const auto& cmd : *cmds) cmd.get().action_(cmd.get());
@@ -319,7 +327,7 @@ private:
 
 	auto parse(std::span<const std::string_view> args)
 		-> std::expected<std::list<std::reference_wrapper<const command>>, std::string> {
-		auto index = 0;
+		auto index = 0uz;
 		const auto curr = [&] { return args[index]; };
 		const auto at_end = [&] { return index == args.size(); };
 		const auto next = [&] {
@@ -401,12 +409,12 @@ private:
 								using T = typename get_value_type<std::decay_t<decltype(type)>>::type;
 
 								if constexpr (std::is_integral_v<T>) {
-									const auto value = parse_number<T>(*option_value);
-									if (!value) {
+									const auto res = parse_number<T>(*option_value);
+									if (!res) {
 										return option_error(std::format("expects an integer number but got '{}'",
 									                                    *option_value));
 									}
-									return *value;
+									return *res;
 								} else if constexpr (std::is_floating_point_v<T>) {  // TODO: replace with parse_number
 								                                                     // when std::from_chars support
 								                                                     // floats
