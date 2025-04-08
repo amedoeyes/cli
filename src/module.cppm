@@ -91,67 +91,7 @@ struct option {
 	std::string name;
 	char short_name{'\0'};
 	std::optional<value_variant> value;
-	std::optional<std::function<void()>> early_action;
 };
-
-}  // namespace cli
-
-export namespace cli {
-
-struct arguments_validator {
-	using validator_func = std::function<std::pair<bool, std::string>(std::span<const std::string_view>)>;
-
-	template<typename F>
-		requires std::invocable<F, std::span<const std::string_view>>
-	          && std::same_as<std::invoke_result_t<F, std::span<const std::string_view>>, std::pair<bool, std::string>>
-	arguments_validator(F&& f) : function_{std::forward<validator_func>(f)} {}
-
-	auto operator()(std::span<const std::string_view> args) const -> std::pair<bool, std::string> {
-		return function_(args);
-	}
-
-	constexpr auto operator+(const arguments_validator& rhs) const -> arguments_validator {
-		const auto& left_func = function_;
-		const auto& right_func = rhs.function_;
-		return [left_func, right_func](std::span<const std::string_view> args) -> std::pair<bool, std::string> {
-			if (const auto [ok, msg] = left_func(args); !ok) return std::pair{false, msg};
-			return right_func(args);
-		};
-	}
-
-private:
-	validator_func function_;
-};
-
-constexpr auto exact_args(std::int32_t n, std::string_view msg = "") -> arguments_validator {
-	return [=](std::span<const std::string_view> args) -> std::pair<bool, std::string> {
-		if (n == args.size()) return {true, ""};
-		return {
-			false,
-			msg.empty() ? std::format("expected {} argument(s) but got {}", n, args.size()) : std::string{msg},
-		};
-	};
-}
-
-constexpr auto min_args(std::int32_t n, std::string_view msg = "") -> arguments_validator {
-	return [=](std::span<const std::string_view> args) -> std::pair<bool, std::string> {
-		if (n <= args.size()) return {true, ""};
-		return {
-			false,
-			msg.empty() ? std::format("expected at least {} argument(s) but got {}", n, args.size()) : std::string{msg},
-		};
-	};
-}
-
-constexpr auto max_args(std::int32_t n, std::string_view msg = "") -> arguments_validator {
-	return [=](std::span<const std::string_view> args) -> std::pair<bool, std::string> {
-		if (n >= args.size()) return {true, ""};
-		return {
-			false,
-			msg.empty() ? std::format("expected at most {} argument(s) but got {}", n, args.size()) : std::string{msg},
-		};
-	};
-}
 
 }  // namespace cli
 
@@ -171,10 +111,6 @@ public:
 
 	auto set_action(const std::function<void(const command&)>& action) {
 		action_ = action;
-	}
-
-	auto set_arguments_validator(const arguments_validator& validator) {
-		arguments_validator_ = validator;
 	}
 
 	auto add_option(const std::string& name, const option& option) -> void {
@@ -302,13 +238,6 @@ public:
 		                | std::views::transform([](auto&& a) { return std::string_view(a); })
 		                | std::ranges::to<std::vector>();
 		if (const auto res = parse(args); !res) return std::unexpected{res.error()};
-		for (const auto& [name, opt] : options_) {
-			if (option_values_.contains(name) && opt.early_action) (*opt.early_action)();
-		}
-		if (arguments_validator_) {
-			const auto [ok, msg] = (*arguments_validator_)(arguments_);
-			if (!ok) return std::unexpected{msg};
-		}
 		return {};
 	}
 
@@ -318,15 +247,6 @@ public:
 		                | std::ranges::to<std::vector>();
 		auto cmds = parse(args);
 		if (!cmds) return std::unexpected{cmds.error()};
-		for (const auto& cmd : *cmds) {
-			for (const auto& [name, opt] : cmd.get().options_) {
-				if (option_values_.contains(name) && opt.early_action) (*opt.early_action)();
-			}
-			if (cmd.get().arguments_validator_) {
-				const auto [ok, msg] = (*cmd.get().arguments_validator_)(arguments_);
-				if (!ok) return std::unexpected{msg};
-			}
-		}
 		for (const auto& cmd : *cmds) cmd.get().action_(cmd.get());
 		return {};
 	}
@@ -337,7 +257,6 @@ private:
 	std::string description_;
 	std::function<void(const command&)> action_;
 	std::vector<std::string_view> arguments_;
-	std::optional<arguments_validator> arguments_validator_;
 	std::vector<std::pair<std::string, option>> options_;
 	std::unordered_map<std::string, primitive> option_values_;
 	std::optional<std::reference_wrapper<const command>> parent_;
