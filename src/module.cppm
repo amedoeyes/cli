@@ -50,6 +50,8 @@ using value_variant = std::variant<value<bool>,
                                    value<std::string>>;
 }  // namespace cli
 
+namespace cli {
+
 template<typename T>
 struct get_value_type;
 
@@ -80,6 +82,8 @@ auto parse_number(std::string_view str, std::int32_t base = 10) -> std::expected
 	return value;
 }
 
+}  // namespace cli
+
 export namespace cli {
 
 struct option {
@@ -88,6 +92,28 @@ struct option {
 	std::string name;
 	char short_name{'\0'};
 	std::optional<value_variant> value;
+};
+
+struct group {
+	std::int32_t id;
+	std::string name;
+
+	template<typename T>
+		requires std::is_enum_v<T>
+	group(T enum_value, std::string_view name) : id{std::to_underlying(enum_value)},
+												 name{name} {}
+
+	group(std::int32_t id, std::string_view name) : id{id}, name{name} {}
+};
+
+}  // namespace cli
+
+namespace cli {
+
+struct option_entry {
+	std::string name;
+	option option;
+	std::optional<std::int32_t> group;
 };
 
 }  // namespace cli
@@ -115,6 +141,17 @@ public:
 		assert(option.short_name == '\0'
 		       || std::isalnum(static_cast<unsigned char>(option.short_name)) && "short_name must be alphanumeric");
 		options_.emplace_back(name, option);
+	}
+
+	auto add_option(const std::string& name, const option& option, std::int32_t group) -> void {
+		assert((!option.name.empty() || option.short_name != '\0') && "name or short_name must be set");
+		assert(option.short_name == '\0'
+		       || std::isalnum(static_cast<unsigned char>(option.short_name)) && "short_name must be alphanumeric");
+		options_.emplace_back(name, option, group);
+	}
+
+	auto set_option_groups(const std::vector<group>& groups) -> void {
+		option_groups_ = groups;
 	}
 
 	auto add_command(const std::string_view name) -> command& {
@@ -213,15 +250,36 @@ public:
 				return usage;
 			};
 
-			const auto options_padding = std::ranges::max(options_ | std::views::values
-			                                              | std::views::transform([&](auto&& option) {
-																return option_usage(option).size();
-															}));
+			const auto options_padding = std::ranges::max(options_ | std::views::transform([&](auto&& e) {
+															  return option_usage(e.option).size();
+														  }));
 
 			help += "Options:\n";
-			for (const auto& option : std::views::values(options_)) {
-				help += std::format("  {:{}}", option_usage(option), options_padding);
-				if (!option.description.empty()) help += std::format("  {}", option.description);
+			if (option_groups_) {
+				auto map = std::map<std::int32_t, std::vector<std::reference_wrapper<const option>>>{};
+				for (const auto& [_, opt, grp] : options_) {
+					if (grp) map[*grp].emplace_back(opt);
+					else map[std::numeric_limits<std::int32_t>::max()].emplace_back(opt);
+				}
+
+				for (const auto& [grp, opts] : map) {
+					const auto it = std::ranges::find_if(*option_groups_, [&](auto&& g) { return g.id == grp; });
+					assert(it != option_groups_->end() && "group not registered");
+
+					help += std::format("  {}:\n", it->name);
+					for (const auto& opt : opts) {
+						help += std::format("    {:{}}", option_usage(opt.get()), options_padding);
+						if (!opt.get().description.empty()) help += std::format("  {}", opt.get().description);
+						help += '\n';
+					}
+					help += '\n';
+				}
+			} else {
+				for (const auto& [_, opt, grp] : options_) {
+					help += std::format("  {:{}}", option_usage(opt), options_padding);
+					if (!opt.description.empty()) help += std::format("  {}", opt.description);
+					help += '\n';
+				}
 				help += '\n';
 			}
 		}
@@ -253,8 +311,9 @@ private:
 	std::string description_;
 	std::function<void(const command&)> action_;
 	std::vector<std::string_view> arguments_;
-	std::vector<std::pair<std::string, option>> options_;
+	std::vector<option_entry> options_;
 	std::unordered_map<std::string, primitive> option_values_;
+	std::optional<std::vector<group>> option_groups_;
 	std::optional<std::reference_wrapper<const command>> parent_;
 	std::vector<std::unique_ptr<command>> children_;
 
@@ -301,11 +360,11 @@ private:
 				}
 				next();
 
-				const auto it = std::ranges::find_if(options_, [&](auto&& p) {
-					return option_prefix == "--" ? p.second.name == option_name : p.second.short_name == option_name[0];
+				const auto it = std::ranges::find_if(options_, [&](auto&& e) {
+					return option_prefix == "--" ? e.option.name == option_name : e.option.short_name == option_name[0];
 				});
 				if (it == options_.end()) return option_error("is not a valid option");
-				const auto& [key, option] = *it;
+				const auto& [name, option, _] = *it;
 
 				if (!option.value && option_value)
 					return option_error(std::format("does not expect a value but got '{}'", *option_value));
@@ -313,7 +372,7 @@ private:
 				if (option.value) {
 					const auto default_value = visit(*option.value,
 					                                 [](auto&& v) -> std::optional<primitive> { return v.data; });
-					if (default_value) option_values_[key] = *default_value;
+					if (default_value) option_values_[name] = *default_value;
 
 					if (!option_value && !at_end() && !curr().starts_with("-")) {
 						option_value = curr();
@@ -365,10 +424,10 @@ private:
 							});
 
 						if (!value) return std::unexpected{value.error()};
-						option_values_[key] = *value;
+						option_values_[name] = *value;
 					}
 				} else {
-					option_values_[key] = true;
+					option_values_[name] = true;
 				}
 
 				continue;
