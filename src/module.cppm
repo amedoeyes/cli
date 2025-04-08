@@ -19,11 +19,8 @@ concept ValueType = std::is_same_v<T, bool> //
 
 template<ValueType T>
 struct value {
-	value() = default;
-
-	explicit value(const T& data) : data{data} {}
-
 	std::optional<T> data;
+	std::optional<std::string> name;
 };
 
 using primitive = std::variant<bool,
@@ -147,19 +144,17 @@ public:
 		if (!description_.empty()) help += std::format("{}\n\n", description_);
 
 		help += "Usage: ";
-		if (!usage_.empty()) {
-			help += usage_;
-		} else {
-			auto parents = std::string{};
-			auto parent = parent_;
-			while (parent) {
-				parents.insert(0, parent->get().name_ + " ");
-				parent = parent->get().parent_;
-			};
-			help += parents + name_;
-			if (!options_.empty()) help += " [options]";
-			if (!children_.empty()) help += " [command]";
-		}
+		auto parents = std::string{};
+		auto parent = parent_;
+		while (parent) {
+			parents.insert(0, parent->get().name_ + " ");
+			parent = parent->get().parent_;
+		};
+		help += parents + name_;
+		if (!options_.empty()) help += " [options]";
+		if (!usage_.empty()) help += std::format(" {}", usage_);
+		else if (!children_.empty()) help += " command";
+
 		help += "\n\n";
 
 		if (!children_.empty()) {
@@ -176,7 +171,6 @@ public:
 
 		if (!options_.empty()) {
 			auto option_usage = [](const auto& option) -> std::string {
-				if (!option.usage.empty()) return option.usage;
 				auto usage = std::string{};
 
 				const auto name = (!option.name.empty()) ? std::format("--{}", option.name) : std::string{};
@@ -187,7 +181,9 @@ public:
 				else if (name.empty() && !short_name.empty()) usage += std::format("{}", short_name);
 				else usage += std::format("{}, {}", short_name, name);
 
-				if (option.value) {
+				if (!option.usage.empty()) {
+					usage += option.usage;
+				} else if (option.value) {
 					const auto type = visit(
 						*option.value,
 						[](const value<bool>&) { return "bool"; },
