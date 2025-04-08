@@ -104,18 +104,6 @@ struct group {
 		requires std::is_enum_v<T>
 	group(T enum_value, std::string_view name) : id{std::to_underlying(enum_value)},
 												 name{name} {}
-
-	group(std::int32_t id, std::string_view name) : id{id}, name{name} {}
-};
-
-}  // namespace cli
-
-namespace cli {
-
-struct option_entry {
-	std::string name;
-	option option;
-	std::optional<std::int32_t> group;
 };
 
 }  // namespace cli
@@ -142,14 +130,16 @@ public:
 		assert((!option.name.empty() || option.short_name != '\0') && "name or short_name must be set");
 		assert(option.short_name == '\0'
 		       || std::isalnum(static_cast<unsigned char>(option.short_name)) && "short_name must be alphanumeric");
-		options_.emplace_back(name, option);
+		options_.emplace_back(name, std::nullopt, option);
 	}
 
-	auto add_option(const std::string& name, const option& option, std::int32_t group) -> void {
+	template<typename T>
+		requires std::is_enum_v<T>
+	auto add_option(const std::string& name, T group, const option& option) -> void {
 		assert((!option.name.empty() || option.short_name != '\0') && "name or short_name must be set");
 		assert(option.short_name == '\0'
 		       || std::isalnum(static_cast<unsigned char>(option.short_name)) && "short_name must be alphanumeric");
-		options_.emplace_back(name, option, group);
+		options_.emplace_back(name, std::to_underlying(group), option);
 	}
 
 	auto set_option_groups(const std::vector<group>& groups) -> void {
@@ -253,13 +243,13 @@ public:
 			};
 
 			const auto options_padding = std::ranges::max(options_ | std::views::transform([&](auto&& e) {
-															  return option_usage(e.option).size();
+															  return option_usage(std::get<2>(e)).size();
 														  }));
 
 			help += "Options:\n";
 			if (option_groups_) {
 				auto map = std::map<std::int32_t, std::vector<std::reference_wrapper<const option>>>{};
-				for (const auto& [_, opt, grp] : options_) {
+				for (const auto& [_, grp, opt] : options_) {
 					if (grp) map[*grp].emplace_back(opt);
 					else map[std::numeric_limits<std::int32_t>::max()].emplace_back(opt);
 				}
@@ -281,7 +271,7 @@ public:
 					help += '\n';
 				}
 			} else {
-				for (const auto& [_, opt, grp] : options_) {
+				for (const auto& [_, grp, opt] : options_) {
 					help += std::format("  {:{}}", option_usage(opt), options_padding);
 					if (!opt.description.empty()) help += std::format("  {}", opt.description);
 					help += '\n';
@@ -323,7 +313,7 @@ private:
 	std::string description_;
 	std::function<void(const command&)> action_;
 	std::vector<std::string_view> arguments_;
-	std::vector<option_entry> options_;
+	std::vector<std::tuple<std::string, std::optional<std::int32_t>, option>> options_;
 	std::unordered_map<std::string, primitive> option_values_;
 	std::optional<std::vector<group>> option_groups_;
 	std::optional<std::reference_wrapper<const command>> parent_;
@@ -373,10 +363,11 @@ private:
 				next();
 
 				const auto it = std::ranges::find_if(options_, [&](auto&& e) {
-					return option_prefix == "--" ? e.option.name == option_name : e.option.short_name == option_name[0];
+					return option_prefix == "--" ? std::get<2>(e).name == option_name
+					                             : std::get<2>(e).short_name == option_name[0];
 				});
 				if (it == options_.end()) return option_error("is not a valid option");
-				const auto& [name, option, _] = *it;
+				const auto& [name, _, option] = *it;
 
 				if (!option.value && option_value)
 					return option_error(std::format("does not expect a value but got '{}'", *option_value));
