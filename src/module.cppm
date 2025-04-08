@@ -265,10 +265,14 @@ public:
 				}
 
 				for (const auto& [grp, opts] : map) {
-					const auto it = std::ranges::find_if(*option_groups_, [&](auto&& g) { return g.id == grp; });
-					assert(it != option_groups_->end() && "group not registered");
+					if (grp == std::numeric_limits<std::int32_t>::max()) {
+						help += "  Ungrouped:\n";
+					} else {
+						const auto it = std::ranges::find_if(*option_groups_, [&](auto&& g) { return g.id == grp; });
+						assert(it != option_groups_->end() && "group not registered");
+						help += std::format("  {}:\n", it->name);
+					}
 
-					help += std::format("  {}:\n", it->name);
 					for (const auto& opt : opts) {
 						help += std::format("    {:{}}", option_usage(opt.get()), options_padding);
 						if (!opt.get().description.empty()) help += std::format("  {}", opt.get().description);
