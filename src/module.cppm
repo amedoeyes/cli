@@ -133,10 +133,24 @@ public:
 	}
 
 	auto add_command(const std::string_view name) -> command& {
-		children_.emplace_back(std::make_unique<command>(name));
-		auto& child = children_.back();
-		child->parent_ = *this;
-		return *child;
+		commands_.emplace_back(std::make_unique<command>(name));
+		auto& cmd = commands_.back();
+		cmd->parent_ = *this;
+		return *cmd;
+	}
+
+	template<typename T>
+		requires std::is_enum_v<T>
+	auto add_command(const std::string_view name, T group) -> command& {
+		commands_.emplace_back(std::make_unique<command>(name));
+		auto& cmd = commands_.back();
+		cmd->parent_ = *this;
+		cmd->group_ = std::to_underlying(group);
+		return *cmd;
+	}
+
+	auto set_command_groups(const std::vector<group>& groups) -> void {
+		command_groups_ = groups;
 	}
 
 	[[nodiscard]]
@@ -168,39 +182,60 @@ public:
 		help += parents + name_;
 		if (!options_.empty()) help += " [options]";
 		if (!usage_.empty()) help += std::format(" {}", usage_);
-		else if (!children_.empty()) help += " command";
+		else if (!commands_.empty()) help += " command";
 
 		help += "\n\n";
 
-		if (!children_.empty()) {
-			const auto commands_padding = std::ranges::max(children_ | std::views::transform([](auto&& child) {
-															   return child->name_.size();
-														   }));
+		if (!commands_.empty()) {
+			const auto cmd_pad = std::ranges::max(commands_ | std::views::transform([](auto&& cmd) {
+													  return cmd->name_.size();
+												  }));
+			const auto cmd_help = [&](const command& cmd) -> std::string {
+				return std::format("{:{}}  {}", cmd.name_, cmd_pad, cmd.description_);
+			};
 
 			help += "Commands:\n";
-			for (const auto& child : children_) {
-				help += std::format("  {:{}}  {}\n", child->name_, commands_padding, child->description_);
+			if (command_groups_) {
+				auto map = std::map<std::int32_t, std::vector<std::string>>{};
+				for (const auto& cmd : commands_) {
+					if (cmd->group_) map[*cmd->group_].emplace_back(cmd_help(*cmd));
+					else map[std::numeric_limits<std::int32_t>::max()].emplace_back(cmd_help(*cmd));
+				}
+
+				for (const auto& [grp, msgs] : map) {
+					if (grp == std::numeric_limits<std::int32_t>::max()) {
+						help += "  Ungrouped:\n";
+					} else {
+						const auto it = std::ranges::find_if(*option_groups_, [&](auto&& g) { return g.id == grp; });
+						assert(it != option_groups_->end() && "group not registered");
+						help += std::format("  {}:\n", it->name);
+					}
+
+					for (const auto& msg : msgs) help += std::format("    {}\n", msg);
+					help += '\n';
+				}
+			} else {
+				for (const auto& cmd : commands_) help += std::format("  {}\n", cmd_help(*cmd));
+				help += "\n";
 			}
-			help += "\n";
 		}
 
 		if (!options_.empty()) {
-			auto option_usage = [](const auto& option) -> std::string {
+			auto opt_useage = [](const option& opt) -> std::string {
 				auto usage = std::string{};
 
-				const auto name = (!option.name.empty()) ? std::format("--{}", option.name) : std::string{};
-				const auto short_name = (option.short_name != '\0') ? std::format("-{}", option.short_name)
-				                                                    : std::string{};
+				const auto name = (!opt.name.empty()) ? std::format("--{}", opt.name) : std::string{};
+				const auto short_name = (opt.short_name != '\0') ? std::format("-{}", opt.short_name) : std::string{};
 
 				if (!name.empty() && short_name.empty()) usage += std::format("    {}", name);
 				else if (name.empty() && !short_name.empty()) usage += std::format("{}", short_name);
 				else usage += std::format("{}, {}", short_name, name);
 
-				if (!option.usage.empty()) {
-					usage += option.usage;
-				} else if (option.value) {
-					const auto type = visit(
-						*option.value,
+				if (!opt.usage.empty()) {
+					usage += opt.usage;
+				} else if (opt.value) {
+					const auto* type = visit(
+						*opt.value,
 						[](const value<bool>&) { return "bool"; },
 						[](const value<std::int8_t>&) { return "s8"; },
 						[](const value<std::uint8_t>&) { return "u8"; },
@@ -214,9 +249,9 @@ public:
 						[](const value<double>&) { return "f64"; },
 						[](const value<std::string>&) { return "str"; });
 
-					const auto default_value = visit(*option.value,
+					const auto default_value = visit(*opt.value,
 					                                 [](auto&& v) -> std::optional<primitive> { return v.data; });
-					const auto value_name = visit(*option.value,
+					const auto value_name = visit(*opt.value,
 					                              [](auto&& v) -> std::optional<std::string> { return v.name; });
 					usage += " ";
 					if (default_value) usage += "[";
@@ -228,19 +263,25 @@ public:
 				return usage;
 			};
 
-			const auto options_padding = std::ranges::max(options_ | std::views::transform([&](auto&& e) {
-															  return option_usage(std::get<2>(e)).size();
-														  }));
+			const auto opt_pad = std::ranges::max(options_ | std::views::transform([&](auto&& opt) {
+													  return opt_useage(std::get<2>(opt)).size();
+												  }));
+			const auto opt_help = [&](const option& opt) -> std::string {
+				auto msg = std::string{};
+				msg += std::format("{:{}}", opt_useage(opt), opt_pad);
+				if (!opt.description.empty()) msg += std::format("  {}", opt.description);
+				return msg;
+			};
 
 			help += "Options:\n";
 			if (option_groups_) {
-				auto map = std::map<std::int32_t, std::vector<std::reference_wrapper<const option>>>{};
+				auto map = std::map<std::int32_t, std::vector<std::string>>{};
 				for (const auto& [_, grp, opt] : options_) {
-					if (grp) map[*grp].emplace_back(opt);
-					else map[std::numeric_limits<std::int32_t>::max()].emplace_back(opt);
+					if (grp) map[*grp].emplace_back(opt_help(opt));
+					else map[std::numeric_limits<std::int32_t>::max()].emplace_back(opt_help(opt));
 				}
 
-				for (const auto& [grp, opts] : map) {
+				for (const auto& [grp, msgs] : map) {
 					if (grp == std::numeric_limits<std::int32_t>::max()) {
 						help += "  Ungrouped:\n";
 					} else {
@@ -249,19 +290,11 @@ public:
 						help += std::format("  {}:\n", it->name);
 					}
 
-					for (const auto& opt : opts) {
-						help += std::format("    {:{}}", option_usage(opt.get()), options_padding);
-						if (!opt.get().description.empty()) help += std::format("  {}", opt.get().description);
-						help += '\n';
-					}
+					for (const auto& msg : msgs) help += std::format("    {}\n", msg);
 					help += '\n';
 				}
 			} else {
-				for (const auto& [_, grp, opt] : options_) {
-					help += std::format("  {:{}}", option_usage(opt), options_padding);
-					if (!opt.description.empty()) help += std::format("  {}", opt.description);
-					help += '\n';
-				}
+				for (const auto& [_, grp, opt] : options_) help += std::format("  {}\n", opt_help(opt));
 				help += '\n';
 			}
 		}
@@ -295,6 +328,7 @@ public:
 
 private:
 	std::string name_;
+	std::optional<std::int32_t> group_;
 	std::string usage_;
 	std::string description_;
 	std::function<void(const command&)> action_;
@@ -303,7 +337,8 @@ private:
 	std::unordered_map<std::string, primitive> option_values_;
 	std::optional<std::vector<group>> option_groups_;
 	std::optional<std::reference_wrapper<const command>> parent_;
-	std::vector<std::unique_ptr<command>> children_;
+	std::vector<std::unique_ptr<command>> commands_;
+	std::optional<std::vector<group>> command_groups_;
 
 	auto parse(std::span<const std::string_view> arguments)
 		-> std::expected<std::list<std::reference_wrapper<const command>>, std::string> {
@@ -414,8 +449,8 @@ private:
 			}
 
 			if (!force_positional) {
-				const auto it = std::ranges::find_if(children_, [&](auto&& c) { return c->name_ == curr(); });
-				if (it != children_.end()) {
+				const auto it = std::ranges::find_if(commands_, [&](auto&& c) { return c->name_ == curr(); });
+				if (it != commands_.end()) {
 					next();
 					auto cmds = (*it)->parse(arguments.subspan(index));
 					if (!cmds) return std::unexpected{cmds.error()};
