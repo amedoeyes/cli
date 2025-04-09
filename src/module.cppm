@@ -6,70 +6,18 @@ export module cli;
 
 import std;
 
-export namespace cli {
-
-template<typename T>
-concept ValueType = std::is_same_v<T, bool> //
-                 || std::is_same_v<T, std::int8_t> || std::is_same_v<T, std::uint8_t> //
-                 || std::is_same_v<T, std::int16_t> || std::is_same_v<T, std::uint16_t> //
-                 || std::is_same_v<T, std::uint32_t> || std::is_same_v<T, std::int32_t>//
-                 || std::is_same_v<T, std::int64_t> || std::is_same_v<T, std::uint64_t> //
-                 || std::is_same_v<T, float> || std::is_same_v<T, double>  //
-                 || std::is_same_v<T, std::string>;
-
-template<ValueType T>
-struct value {
-	std::optional<T> data;
-	std::optional<std::string> name;
-};
-
-using primitive = std::variant<bool,
-                               std::int8_t,
-                               std::uint8_t,
-                               std::int16_t,
-                               std::uint16_t,
-                               std::int32_t,
-                               std::uint32_t,
-                               std::int64_t,
-                               std::uint64_t,
-                               float,
-                               double,
-                               std::string>;
-
-using value_variant = std::variant<value<bool>,
-                                   value<std::int8_t>,
-                                   value<std::uint8_t>,
-                                   value<std::int16_t>,
-                                   value<std::uint16_t>,
-                                   value<std::int32_t>,
-                                   value<std::uint32_t>,
-                                   value<std::int64_t>,
-                                   value<std::uint64_t>,
-                                   value<float>,
-                                   value<double>,
-                                   value<std::string>>;
-}  // namespace cli
-
 namespace cli {
-
-template<typename T>
-struct get_value_type;
 
 template<class... Ts>
 struct overloads : Ts... {
 	using Ts::operator()...;
 };
 
-template<typename T>
-struct get_value_type<cli::value<T>> {
-	using type = T;
-};
-
 template<typename Variant, typename... Funcs>
 	requires requires(Variant&& variant, Funcs&&... funcs) {
 				 std::visit(overloads{std::forward<Funcs>(funcs)...}, std::forward<Variant>(variant));
 			 }
-auto visit(Variant&& variant, Funcs&&... funcs) {
+constexpr auto visit(Variant&& variant, Funcs&&... funcs) {
 	return std::visit(overloads{std::forward<Funcs>(funcs)...}, std::forward<Variant>(variant));
 }
 
@@ -88,12 +36,54 @@ constexpr auto parse_number(std::string_view str, std::int32_t base = 10) -> std
 
 export namespace cli {
 
+template<typename T>
+concept Primitive = std::is_same_v<T, bool> //
+                 || std::is_same_v<T, std::int8_t> || std::is_same_v<T, std::uint8_t> //
+                 || std::is_same_v<T, std::int16_t> || std::is_same_v<T, std::uint16_t> //
+                 || std::is_same_v<T, std::uint32_t> || std::is_same_v<T, std::int32_t>//
+                 || std::is_same_v<T, std::int64_t> || std::is_same_v<T, std::uint64_t> //
+                 || std::is_same_v<T, float> || std::is_same_v<T, double>  //
+                 || std::is_same_v<T, std::string>;
+
+using primitive = std::variant<bool,
+                               std::int8_t,
+                               std::uint8_t,
+                               std::int16_t,
+                               std::uint16_t,
+                               std::int32_t,
+                               std::uint32_t,
+                               std::int64_t,
+                               std::uint64_t,
+                               float,
+                               double,
+                               std::string>;
+
+template<Primitive T>
+struct value {
+	using type = T;
+	std::optional<std::string> name;
+	std::optional<T> data;
+};
+
+using primitive_value = std::variant<value<bool>,
+                                     value<std::int8_t>,
+                                     value<std::uint8_t>,
+                                     value<std::int16_t>,
+                                     value<std::uint16_t>,
+                                     value<std::int32_t>,
+                                     value<std::uint32_t>,
+                                     value<std::int64_t>,
+                                     value<std::uint64_t>,
+                                     value<float>,
+                                     value<double>,
+                                     value<std::string>>;
+
 struct option {
 	std::string usage{};
 	std::string description{};
 	std::string name{};
 	char short_name{'\0'};
-	std::optional<value_variant> value{std::nullopt};
+	std::optional<primitive_value> value{std::nullopt};
 };
 
 struct group {
@@ -102,13 +92,9 @@ struct group {
 
 	template<typename T>
 		requires std::is_enum_v<T>
-	group(T enum_value, std::string_view name) : id{std::to_underlying(enum_value)},
-												 name{name} {}
+	group(T id, std::string_view name) : id{std::to_underlying(id)},
+										 name{name} {}
 };
-
-}  // namespace cli
-
-export namespace cli {
 
 class command {
 public:
@@ -158,7 +144,7 @@ public:
 		return arguments_;
 	}
 
-	template<ValueType T>
+	template<Primitive T>
 	[[nodiscard]]
 	auto option_value(std::string_view name) const -> std::optional<T> {
 		if (const auto it = option_values_.find(std::string{name}); it != option_values_.end()) {
@@ -319,14 +305,20 @@ private:
 	std::optional<std::reference_wrapper<const command>> parent_;
 	std::vector<std::unique_ptr<command>> children_;
 
-	auto parse(std::span<const std::string_view> args)
+	auto parse(std::span<const std::string_view> arguments)
 		-> std::expected<std::list<std::reference_wrapper<const command>>, std::string> {
 		auto index = 0uz;
-		const auto curr = [&] { return args[index]; };
-		const auto at_end = [&] { return index == args.size(); };
+		const auto curr = [&] { return arguments[index]; };
+		const auto at_end = [&] { return index == arguments.size(); };
 		const auto next = [&] {
-			if (index < args.size()) ++index;
+			if (index < arguments.size()) ++index;
 		};
+		const auto extract = [&] {
+			const auto arg = curr();
+			next();
+			return arg;
+		};
+
 		auto force_positional = false;
 
 		while (!at_end()) {
@@ -339,8 +331,13 @@ private:
 				auto option_name = std::string_view{};
 				auto option_value = std::optional<std::string_view>{};
 				const auto option_prefix = std::string_view{curr().starts_with("--") ? "--" : "-"};
-				const auto option_error = [&](const std::string_view msg) {
-					return std::unexpected{std::format("'{}{}' {}", option_prefix, option_name, msg)};
+				const auto option_error = [&]<typename... Args>(std::format_string<Args...> fmt, Args&&... args) {
+					return std::unexpected{
+						std::format("'{}{}' {}",
+					                option_prefix,
+					                option_name,
+					                std::format(std::move(fmt), std::forward<Args>(args)...)),
+					};
 				};
 
 				if (option_prefix == "--") {
@@ -369,62 +366,42 @@ private:
 				if (it == options_.end()) return option_error("is not a valid option");
 				const auto& [name, _, option] = *it;
 
-				if (!option.value && option_value)
-					return option_error(std::format("does not expect a value but got '{}'", *option_value));
+				if (!option.value && option_value) {
+					return option_error("does not expect a value but got '{}'", *option_value);
+				}
 
 				if (option.value) {
 					const auto default_value = visit(*option.value,
 					                                 [](auto&& v) -> std::optional<primitive> { return v.data; });
 					if (default_value) option_values_[name] = *default_value;
 
-					if (!option_value && !at_end() && !curr().starts_with("-")) {
-						option_value = curr();
-						next();
-					} else if (!default_value && !option_value) {
-						return option_error("expects a value");
-					}
+					if (!option_value && !at_end() && !curr().starts_with("-")) option_value = extract();
+					else if (!default_value && !option_value) return option_error("expects a value");
 
 					if (option_value) {
-						const auto value = visit(
-							*option.value,
+						const auto value = visit(*option.value, [&](auto&& v) -> std::expected<primitive, std::string> {
+							using T = typename std::remove_cvref_t<decltype(v)>::type;
+							const auto& str = *option_value;
 
-							[&](const cli::value<bool>&) -> std::expected<primitive, std::string> {
-								if (*option_value == "true") return true;
-								if (*option_value == "false") return false;
-								return option_error(std::format(
-									"expects a boolean value of either 'true' or 'false' " "but " "got '{}'",
-									*option_value));
-							},
-
-							[&](const cli::value<std::string>&) -> std::expected<primitive, std::string> {
-								return std::string{*option_value};
-							},
-
-							[&](const auto& type) -> std::expected<primitive, std::string> {
-								using T = typename get_value_type<std::decay_t<decltype(type)>>::type;
-
-								if constexpr (std::is_integral_v<T>) {
-									const auto res = parse_number<T>(*option_value);
-									if (!res) {
-										return option_error(std::format("expects an integer number but got '{}'",
-									                                    *option_value));
-									}
-									return *res;
-								} else if constexpr (std::is_floating_point_v<T>) {  // TODO: replace with parse_number
-								                                                     // when std::from_chars support
-								                                                     // floats
-									try {
-										if constexpr (std::is_same_v<T, float>) {
-											return std::stof(std::string{*option_value});
-										} else if constexpr (std::is_same_v<T, double>) {
-											return std::stod(std::string{*option_value});
-										}
-									} catch (const std::exception&) {
-										return option_error(std::format("expects a floating-point number but got '{}'",
-									                                    *option_value));
-									}
+							if constexpr (std::is_same_v<T, bool>) {
+								if (str == "true") return true;
+								if (str == "false") return false;
+								return option_error("expects a boolean value of either 'true' or 'false' but got '{}'",
+								                    str);
+							} else if constexpr (std::is_same_v<T, std::string>) {
+								return std::string{str};
+							} else if constexpr (std::is_integral_v<T>) {
+								if (const auto res = parse_number<T>(str)) return *res;
+								return option_error("expects an integer number but got '{}'", str);
+							} else if constexpr (std::is_floating_point_v<T>) {
+								try {
+									if constexpr (std::is_same_v<T, float>) return std::stof(std::string{str});
+									else if constexpr (std::is_same_v<T, double>) return std::stod(std::string{str});
+								} catch (const std::exception&) {
+									return option_error("expects a floating-point number but got '{}'", str);
 								}
-							});
+							}
+						});
 
 						if (!value) return std::unexpected{value.error()};
 						option_values_[name] = *value;
@@ -440,17 +417,14 @@ private:
 				const auto it = std::ranges::find_if(children_, [&](auto&& c) { return c->name_ == curr(); });
 				if (it != children_.end()) {
 					next();
-					auto cmds = (*it)->parse(args.subspan(index));
+					auto cmds = (*it)->parse(arguments.subspan(index));
 					if (!cmds) return std::unexpected{cmds.error()};
 					cmds->emplace_front(*this);
 					return *cmds;
 				}
 			}
 
-			if (!at_end()) {
-				arguments_.emplace_back(curr());
-				next();
-			}
+			if (!at_end()) arguments_.emplace_back(extract());
 		}
 
 		return std::list{std::cref(*this)};
