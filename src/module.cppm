@@ -411,7 +411,7 @@ private:
 					                                 [](auto&& v) -> std::optional<primitive> { return v.data; });
 					if (default_value) option_values_[name] = *default_value;
 
-					if (!option_value && !at_end() && !curr().starts_with("-")) option_value = extract();
+					if (!option_value && !at_end()) option_value = extract();
 					else if (!default_value && !option_value) return option_error("expects a value");
 
 					if (option_value) {
