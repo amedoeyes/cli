@@ -363,7 +363,7 @@ private:
 				next();
 			}
 
-			if (!force_positional && curr().starts_with('-')) {
+			if (!force_positional && curr().starts_with('-') && curr() != "-") {
 				auto option_name = std::string_view{};
 				auto option_value = std::optional<std::string_view>{};
 				const auto option_prefix = std::string_view{curr().starts_with("--") ? "--" : "-"};
