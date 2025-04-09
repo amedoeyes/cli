@@ -306,7 +306,7 @@ public:
 	auto parse(std::int32_t argc, char** argv) -> std::expected<void, std::string> {
 		auto args = std::vector<std::string_view>{};
 		args.reserve(static_cast<std::size_t>(argc));
-		for (const auto i : std::views::iota(0z, static_cast<std::int64_t>(argc))) {
+		for (const auto i : std::views::iota(1z, static_cast<std::int64_t>(argc))) {
 			args.emplace_back(*std::next(argv, i));
 		}
 		if (const auto res = parse(args); !res) return std::unexpected{res.error()};
@@ -317,7 +317,7 @@ public:
 	auto execute(std::int32_t argc, char** argv) -> std::expected<void, std::string> {
 		auto args = std::vector<std::string_view>{};
 		args.reserve(static_cast<std::size_t>(argc));
-		for (const auto i : std::views::iota(0z, static_cast<std::int64_t>(argc))) {
+		for (const auto i : std::views::iota(1z, static_cast<std::int64_t>(argc))) {
 			args.emplace_back(*std::next(argv, i));
 		}
 		auto cmds = parse(args);
