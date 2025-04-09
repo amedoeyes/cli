@@ -22,7 +22,8 @@ constexpr auto visit(Variant&& variant, Funcs&&... funcs) {
 }
 
 template<typename T>
-constexpr auto parse_number(std::string_view str, std::int32_t base = 10) -> std::expected<T, std::error_code> {
+constexpr auto parse_number(std::string_view str, std::int32_t base = 10) noexcept
+	-> std::expected<T, std::error_code> {
 	auto value = T{};
 	const auto* begin = str.data();
 	const auto* end = std::next(str.data(), static_cast<std::int64_t>(str.size()));
@@ -92,27 +93,27 @@ struct group {
 
 	template<typename T>
 		requires std::is_enum_v<T>
-	group(T id, std::string_view name) : id{std::to_underlying(id)},
-										 name{name} {}
+	group(T id, std::string_view name) noexcept : id{std::to_underlying(id)},
+												  name{name} {}
 };
 
 class command {
 public:
-	explicit command(std::string_view name) : name_{name} {}
+	explicit command(std::string_view name) noexcept : name_{name} {}
 
-	auto set_usage(std::string_view usage) -> void {
+	auto set_usage(std::string_view usage) noexcept -> void {
 		usage_ = usage;
 	}
 
-	auto set_description(std::string_view description) -> void {
+	auto set_description(std::string_view description) noexcept -> void {
 		description_ = description;
 	}
 
-	auto set_action(const std::function<void(const command&)>& action) {
+	auto set_action(const std::function<void(const command&)>& action) noexcept {
 		action_ = action;
 	}
 
-	auto add_option(const std::string& name, const option& option) -> void {
+	auto add_option(const std::string& name, const option& option) noexcept -> void {
 		assert((!option.name.empty() || option.short_name != '\0') && "name or short_name must be set");
 		assert(option.short_name == '\0'
 		       || std::isalnum(static_cast<unsigned char>(option.short_name)) && "short_name must be alphanumeric");
@@ -121,18 +122,18 @@ public:
 
 	template<typename T>
 		requires std::is_enum_v<T>
-	auto add_option(const std::string& name, T group, const option& option) -> void {
+	auto add_option(const std::string& name, T group, const option& option) noexcept -> void {
 		assert((!option.name.empty() || option.short_name != '\0') && "name or short_name must be set");
 		assert(option.short_name == '\0'
 		       || std::isalnum(static_cast<unsigned char>(option.short_name)) && "short_name must be alphanumeric");
 		options_.emplace_back(name, std::to_underlying(group), option);
 	}
 
-	auto set_option_groups(const std::vector<group>& groups) -> void {
+	auto set_option_groups(const std::vector<group>& groups) noexcept -> void {
 		option_groups_ = groups;
 	}
 
-	auto add_command(const std::string_view name) -> command& {
+	auto add_command(std::string_view name) noexcept -> command& {
 		commands_.emplace_back(std::make_unique<command>(name));
 		auto& cmd = commands_.back();
 		cmd->parent_ = *this;
@@ -141,7 +142,7 @@ public:
 
 	template<typename T>
 		requires std::is_enum_v<T>
-	auto add_command(const std::string_view name, T group) -> command& {
+	auto add_command(std::string_view name, T group) noexcept -> command& {
 		commands_.emplace_back(std::make_unique<command>(name));
 		auto& cmd = commands_.back();
 		cmd->parent_ = *this;
@@ -149,25 +150,25 @@ public:
 		return *cmd;
 	}
 
-	auto set_command_groups(const std::vector<group>& groups) -> void {
+	auto set_command_groups(const std::vector<group>& groups) noexcept -> void {
 		command_groups_ = groups;
 	}
 
 	[[nodiscard]]
-	auto arguments() const -> std::span<const std::string_view> {
+	auto arguments() const noexcept -> std::span<const std::string_view> {
 		return arguments_;
 	}
 
 	template<Primitive T>
 	[[nodiscard]]
-	auto option_value(std::string_view name) const -> std::optional<T> {
+	auto option_value(std::string_view name) const noexcept -> std::optional<T> {
 		if (const auto it = option_values_.find(std::string{name}); it != option_values_.end()) {
 			if (const auto* value = std::get_if<T>(&it->second)) return *value;
 		}
 		return std::nullopt;
 	}
 
-	auto print_help() const -> void {
+	auto print_help() const noexcept -> void {
 		auto help = std::string{};
 
 		if (!description_.empty()) help += std::format("{}\n\n", description_);
@@ -303,7 +304,7 @@ public:
 	}
 
 	[[nodiscard]]
-	auto parse(std::int32_t argc, char** argv) -> std::expected<void, std::string> {
+	auto parse(std::int32_t argc, char** argv) noexcept -> std::expected<void, std::string> {
 		auto args = std::vector<std::string_view>{};
 		args.reserve(static_cast<std::size_t>(argc));
 		for (const auto i : std::views::iota(1z, static_cast<std::int64_t>(argc))) {
@@ -314,7 +315,7 @@ public:
 	}
 
 	[[nodiscard]]
-	auto execute(std::int32_t argc, char** argv) -> std::expected<void, std::string> {
+	auto execute(std::int32_t argc, char** argv) noexcept -> std::expected<void, std::string> {
 		auto args = std::vector<std::string_view>{};
 		args.reserve(static_cast<std::size_t>(argc));
 		for (const auto i : std::views::iota(1z, static_cast<std::int64_t>(argc))) {
@@ -340,7 +341,7 @@ private:
 	std::vector<std::unique_ptr<command>> commands_;
 	std::optional<std::vector<group>> command_groups_;
 
-	auto parse(std::span<const std::string_view> arguments)
+	auto parse(std::span<std::string_view> arguments) noexcept
 		-> std::expected<std::list<std::reference_wrapper<const command>>, std::string> {
 		auto index = 0uz;
 		const auto curr = [&] { return arguments[index]; };
