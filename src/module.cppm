@@ -133,6 +133,11 @@ public:
 		option_groups_ = groups;
 	}
 
+	[[nodiscard]]
+	auto got_option(std::string_view name) const noexcept -> bool {
+		return option_values_.contains(std::string{name});
+	}
+
 	auto add_command(std::string_view name) noexcept -> command& {
 		commands_.emplace_back(std::make_unique<command>(name));
 		auto& cmd = commands_.back();
@@ -166,11 +171,6 @@ public:
 			if (const auto* value = std::get_if<T>(&it->second)) return *value;
 		}
 		return std::nullopt;
-	}
-
-	[[nodiscard]]
-	auto has_option(std::string_view name) const noexcept -> bool {
-		return option_values_.contains(std::string{name});
 	}
 
 	auto print_help() const noexcept -> void {
