@@ -358,7 +358,7 @@ private:
 	std::optional<std::reference_wrapper<const command>> parent_;
 	std::vector<std::unique_ptr<command>> commands_;
 	std::optional<std::vector<group>> command_groups_;
-	bool got_command_;
+	bool got_command_{false};
 
 	auto parse(std::span<std::string_view> arguments) noexcept
 		-> std::expected<std::list<std::reference_wrapper<const command>>, std::string> {
