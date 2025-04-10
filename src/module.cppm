@@ -62,8 +62,8 @@ using primitive = std::variant<bool,
 template<Primitive T>
 struct value {
 	using type = T;
-	std::optional<std::string> name;
-	std::optional<T> data;
+	std::optional<std::string> name{};
+	std::optional<T> data{};
 };
 
 using primitive_value = std::variant<value<bool>,
@@ -109,7 +109,7 @@ public:
 		description_ = description;
 	}
 
-	auto set_action(const std::function<void(const command&)>& action) noexcept {
+	auto set_action(const std::function<std::optional<std::int32_t>(const command&)>& action) noexcept {
 		action_ = action;
 	}
 
@@ -320,7 +320,7 @@ public:
 	}
 
 	[[nodiscard]]
-	auto execute(std::int32_t argc, char** argv) noexcept -> std::expected<void, std::string> {
+	auto execute(std::int32_t argc, char** argv) noexcept -> std::expected<std::int32_t, std::string> {
 		auto args = std::vector<std::string_view>{};
 		args.reserve(static_cast<std::size_t>(argc));
 		for (const auto i : std::views::iota(1z, static_cast<std::int64_t>(argc))) {
@@ -328,8 +328,12 @@ public:
 		}
 		auto cmds = parse(args);
 		if (!cmds) return std::unexpected{cmds.error()};
-		for (const auto& cmd : *cmds) cmd.get().action_(cmd.get());
-		return {};
+		for (const auto& cmd : *cmds) {
+			if (const auto& action = cmd.get().action_) {
+				if (const auto ret = (*action)(cmd.get())) return *ret;
+			}
+		}
+		return 0;
 	}
 
 private:
@@ -337,7 +341,7 @@ private:
 	std::optional<std::int32_t> group_;
 	std::string usage_;
 	std::string description_;
-	std::function<void(const command&)> action_;
+	std::optional<std::function<std::optional<std::int32_t>(const command&)>> action_;
 	std::vector<std::string_view> arguments_;
 	std::vector<std::tuple<std::string, std::optional<std::int32_t>, option>> options_;
 	std::unordered_map<std::string, primitive> option_values_;
