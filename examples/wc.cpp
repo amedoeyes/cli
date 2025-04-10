@@ -46,17 +46,17 @@ auto main(int argc, char** argv) -> int {
 		return 1;
 	}
 
-	if (cli.has_option("help")) {
+	if (cli.got_option("help")) {
 		cli.print_help();
 		return 0;
 	}
 
-	const auto show_all = !(cli.has_option("lines") || cli.has_option("words") || cli.has_option("bytes"));
+	const auto show_all = !(cli.got_option("lines") || cli.got_option("words") || cli.got_option("bytes"));
 
 	const auto print_stats = [&](std::size_t lines, std::size_t words, std::size_t chars, std::int32_t width) {
-		if (show_all || cli.has_option("lines")) std::print("{:>{}} ", lines, width);
-		if (show_all || cli.has_option("words")) std::print("{:>{}} ", words, width);
-		if (show_all || cli.has_option("bytes")) std::print("{:>{}} ", chars, width);
+		if (show_all || cli.got_option("lines")) std::print("{:>{}} ", lines, width);
+		if (show_all || cli.got_option("words")) std::print("{:>{}} ", words, width);
+		if (show_all || cli.got_option("bytes")) std::print("{:>{}} ", chars, width);
 	};
 
 	const auto args = cli.arguments();

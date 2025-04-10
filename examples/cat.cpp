@@ -11,7 +11,7 @@ auto main(int argc, char** argv) -> int {
 		return 1;
 	}
 
-	if (cli.has_option("help")) {
+	if (cli.got_option("help")) {
 		cli.print_help();
 		return 0;
 	}
