@@ -4,7 +4,7 @@ import std;
 auto main(int argc, char** argv) -> int {
 	auto cli = cli::command{"hello"};
 	cli.add_option("name",
-	               cli::option{
+	               {
 					   .description = "entity to greet",
 					   .name = "name",
 					   .short_name = 'n',
@@ -13,7 +13,7 @@ auto main(int argc, char** argv) -> int {
 	cli.add_option("help", {.description = "display this help and exit", .name = "help", .short_name = 'h'});
 
 	if (const auto res = cli.parse(argc, argv); !res) {
-		std::println(std::cerr, "echo: {}", res.error());
+		std::println(std::cerr, "hello: {}", res.error());
 		return 1;
 	}
 
