@@ -160,6 +160,11 @@ public:
 	}
 
 	[[nodiscard]]
+	auto got_command() const noexcept -> bool {
+		return got_command_;
+	}
+
+	[[nodiscard]]
 	auto arguments() const noexcept -> std::span<const std::string_view> {
 		return arguments_;
 	}
@@ -349,6 +354,7 @@ private:
 	std::optional<std::reference_wrapper<const command>> parent_;
 	std::vector<std::unique_ptr<command>> commands_;
 	std::optional<std::vector<group>> command_groups_;
+	bool got_command_;
 
 	auto parse(std::span<std::string_view> arguments) noexcept
 		-> std::expected<std::list<std::reference_wrapper<const command>>, std::string> {
@@ -462,6 +468,7 @@ private:
 				const auto it = std::ranges::find_if(commands_, [&](auto&& c) { return c->name_ == curr(); });
 				if (it != commands_.end()) {
 					next();
+					got_command_ = true;
 					auto cmds = (*it)->parse(arguments.subspan(index));
 					if (!cmds) return std::unexpected{cmds.error()};
 					cmds->emplace_front(*this);
