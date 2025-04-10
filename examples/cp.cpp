@@ -1,5 +1,5 @@
-import std;
 import cli;
+import std;
 
 auto main(int argc, char** argv) -> int {
 	auto cli = cli::command{"cp"};

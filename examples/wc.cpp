@@ -1,5 +1,5 @@
-import std;
 import cli;
+import std;
 
 struct file_stats {
 	std::string name;
