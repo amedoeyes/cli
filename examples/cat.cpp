@@ -3,7 +3,7 @@ import cli;
 
 auto main(int argc, char** argv) -> int {
 	auto cli = cli::command{"cat"};
-	cli.set_usage("[files]...");
+	cli.set_usage("[file]...");
 	cli.add_option("help", {.description = "display this help and exit", .name = "help", .short_name = 'h'});
 
 	if (const auto res = cli.parse(argc, argv); !res) {
@@ -11,7 +11,7 @@ auto main(int argc, char** argv) -> int {
 		return 1;
 	}
 
-	if (cli.option_value<bool>("help")) {
+	if (cli.has_option("help")) {
 		cli.print_help();
 		return 0;
 	}

@@ -168,6 +168,11 @@ public:
 		return std::nullopt;
 	}
 
+	[[nodiscard]]
+	auto has_option(std::string_view name) const noexcept -> bool {
+		return option_values_.contains(std::string{name});
+	}
+
 	auto print_help() const noexcept -> void {
 		auto help = std::string{};
 
