@@ -238,7 +238,7 @@ public:
 				else usage += std::format("{}, {}", short_name, name);
 
 				if (!opt.usage.empty()) {
-					usage += opt.usage;
+					usage += std::format(" {}", opt.usage);
 				} else if (opt.value) {
 					const auto* type = visit(
 						*opt.value,
