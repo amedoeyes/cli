@@ -62,8 +62,12 @@ using primitive = std::variant<bool,
 template<Primitive T>
 struct value {
 	using type = T;
-	std::optional<std::string> name{};
-	std::optional<T> data{};
+	std::optional<std::string> name;
+	std::optional<T> data;
+
+	explicit value(std::string_view name) noexcept : name{name} {}
+
+	value(std::string_view name, T data) noexcept : name{name}, data{data} {}
 };
 
 using primitive_value = std::variant<value<bool>,
